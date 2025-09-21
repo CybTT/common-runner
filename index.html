@@ -88,14 +88,15 @@
 
   // Restart
   function restart(){
-    obstacles.length=0;
-    trees.length=0;
-    obstacleTimer = 0; treeTimer=0;
-    score=0; speed=6.5; last=0; gameOver=false;
-    player.y=0; player.vy=0; player.ducking=false;
-    hintEl.textContent = "↑ Jump • ↓ Duck • R Restart";
-    requestAnimationFrame(loop);
-  }
+  obstacles.length=0;
+  trees.length=0;
+  obstacleTimer = 0; treeTimer=0;
+  score=0; speed=6.5; last=0; gameOver=false;
+  player.y=0; player.vy=0; player.ducking=false;
+  window.__scoreSubmitted = false;   // BURAYI EKLE
+  hintEl.textContent = "↑ Jump • ↓ Duck • R Restart";
+  requestAnimationFrame(loop);
+}
   window.addEventListener('keydown',e=>{
     if(e.code==="ArrowUp" && !gameOver){ player.jump(); }
     if(e.code==="ArrowDown"){ player.ducking=true; }
