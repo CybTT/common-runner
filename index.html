@@ -184,11 +184,97 @@
       ctx.fillStyle="#fff"; ctx.textAlign="center";
       ctx.font="bold 32px Arial"; ctx.fillText("Game Over", W/2, H/2 - 10);
       ctx.font="18px Arial"; ctx.fillText("Press R to Restart", W/2, H/2 + 26);
+if(!window.__scoreSubmitted){
+  window.__scoreSubmitted = true;
+  reportScore(Math.floor(score));   // << Firebase’e kaydet
+}
     }
   }
 
   cowImg.onload=()=>requestAnimationFrame(loop);
 })();
+</script>
+  <!-- Leaderboard button + modal -->
+<style>
+  #lbBtn{position:fixed;top:56px;right:12px;font:600 14px system-ui;padding:8px 10px;
+         border-radius:10px;border:1px solid #0001;background:#fff8;backdrop-filter:blur(4px);cursor:pointer}
+  #lbModal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}
+  #lbCard{width:min(92vw,420px);max-height:80vh;overflow:auto;background:#fff;border-radius:14px;
+          box-shadow:0 10px 30px #0004;padding:16px}
+  #lbCard h3{margin:0 0 8px 0;font:700 18px system-ui}
+  #lbList{list-style:none;margin:0;padding:0}
+  #lbList li{display:flex;justify-content:space-between;padding:8px 6px;border-bottom:1px solid #eee}
+  #lbClose{float:right;border:none;background:#000; color:#fff; padding:4px 8px;border-radius:8px;cursor:pointer}
+</style>
+
+<button id="lbBtn" title="Show leaderboard">Leaderboard</button>
+<div id="lbModal">
+  <div id="lbCard">
+    <button id="lbClose">Close</button>
+    <h3>Top Scores</h3>
+    <ul id="lbList"></ul>
+  </div>
+</div>
+  <script type="module">
+  // Firebase SDK (CDN)
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-analytics.js";
+  import { getFirestore, collection, addDoc, serverTimestamp,
+           query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+
+  // YOUR CONFIG (from you)
+  const firebaseConfig = {
+    apiKey: "AIzaSyB_dsSpZFDAg-ZZggB_tYf8zFYETyBUL7w",
+    authDomain: "comm-dfa54.firebaseapp.com",
+    projectId: "comm-dfa54",
+    storageBucket: "comm-dfa54.firebasestorage.app",
+    messagingSenderId: "130174378386",
+    appId: "1:130174378386:web:0046c07273d731d530e14b",
+    measurementId: "G-YVVWZKXXJ6"
+  };
+
+  // Init
+  const app = initializeApp(firebaseConfig);
+  getAnalytics(app);
+  const db = getFirestore(app);
+  const scoresRef = collection(db, "scores");
+
+  // ----- Public helpers (oyunun ana kodundan çağıracağız)
+  window.reportScore = async function(score){
+    try{
+      // basit isim prompt (isteğe bağlı: localStorage ile hatırlar)
+      const key = "commonrunner_name";
+      let name = localStorage.getItem(key) || prompt("Your name for the leaderboard?");
+      if(!name) return; // vazgeçtiyse kaydetme
+      localStorage.setItem(key, name);
+
+      await addDoc(scoresRef, { name: String(name).slice(0,16), score: Number(score), createdAt: serverTimestamp() });
+      console.log("Score saved");
+      // Kaydedince otomatik listeyi açalım (istersen kaldır)
+      openLeaderboard();
+    }catch(e){ console.error(e); alert("Could not save score. Please try again later."); }
+  }
+
+  async function fetchTopScores(n=10){
+    const q = query(scoresRef, orderBy("score","desc"), limit(n));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data());
+  }
+
+  window.openLeaderboard = async function(){
+    const list = document.getElementById("lbList");
+    list.innerHTML = "<li>Loading…</li>";
+    document.getElementById("lbModal").style.display = "flex";
+    const rows = await fetchTopScores(10);
+    list.innerHTML = rows.length
+      ? rows.map((r,i)=>`<li><span>${i+1}. ${r.name||"Anon"}</span><b>${r.score||0}</b></li>`).join("")
+      : "<li>No scores yet</li>";
+  }
+
+  // UI wiring
+  document.getElementById("lbBtn").onclick = ()=> openLeaderboard();
+  document.getElementById("lbClose").onclick = ()=> (document.getElementById("lbModal").style.display="none");
+  document.getElementById("lbModal").onclick = (e)=>{ if(e.target.id==="lbModal") e.currentTarget.style.display="none"; };
 </script>
 </body>
 </html>
