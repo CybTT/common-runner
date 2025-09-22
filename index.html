@@ -38,8 +38,13 @@
   const cowImg = new Image();
   cowImg.src = "./20250921_2312_3D Pixel Character Design_remix_01k5pyekm6e2e9e21az6gprrtb.png";
 
-  // Player (facing right, slightly larger)
-  const player = { x:90, y:0, vy:0, width:100, height:100, frame:0, frameTick:0, ducking:false,
+  // Global state
+  window.__scoreSubmitted = false;
+  let animFrame;
+
+  // Player
+  const player = { 
+    x:90, y:0, vy:0, width:100, height:100, frame:0, frameTick:0, ducking:false,
     jump(){ if(this.y<=0){ this.vy=16; this.y=1; } },
     update(dt){
       if(this.y>0 || this.vy>0){ this.vy -= 0.8; this.y += this.vy; if(this.y<0){ this.y=0; this.vy=0; } }
@@ -52,11 +57,10 @@
       const x = this.x, y = groundY-h-this.y;
       ctx.save();
       ctx.translate(x + w/2, y + h/2);
-      ctx.scale(-1, 1); // face right
+      ctx.scale(-1, 1);
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(cowImg, -w/2, -h/2, w, h);
       ctx.restore();
-      // shadow
       ctx.globalAlpha = 0.14;
       ctx.beginPath();
       ctx.ellipse(x + w*0.5, groundY + 6, 40, 10, 0, 0, Math.PI*2);
@@ -64,7 +68,7 @@
       ctx.globalAlpha = 1;
     },
     hitbox(){
-      return {x:this.x+6, y:groundY-this.height-this.y+4, w:this.width-12, h:this.height-8}; // tighter player box
+      return {x:this.x+6, y:groundY-this.height-this.y+4, w:this.width-12, h:this.height-8};
     }
   };
 
@@ -76,27 +80,30 @@
     obstacles.push({x:W, y:groundY-h, w, h});
   }
 
-  // Simple parallax trees (as in v5)
+  // Trees
   const trees=[];
   function spawnTree(){ trees.push({x:W, y:groundY-120, h:100+Math.random()*80}); }
   let treeTimer=0;
 
   // Game state
   let last=0, score=0, gameOver=false;
-  let speed = 6.5;          // start speed
-  const maxSpeed = 14;      // cap like dino does at high pace
+  let speed = 6.5;
+  const maxSpeed = 14;
 
   // Restart
   function restart(){
-  obstacles.length=0;
-  trees.length=0;
-  obstacleTimer = 0; treeTimer=0;
-  score=0; speed=6.5; last=0; gameOver=false;
-  player.y=0; player.vy=0; player.ducking=false;
-  window.__scoreSubmitted = false;   // BURAYI EKLE
-  hintEl.textContent = "↑ Jump • ↓ Duck • R Restart";
-  requestAnimationFrame(loop);
-}
+    cancelAnimationFrame(animFrame);      // eski döngüyü kes
+    ctx.clearRect(0,0,W,H);               // ekran temizle
+    obstacles.length=0;
+    trees.length=0;
+    obstacleTimer = 0; treeTimer=0;
+    score=0; speed=6.5; last=0; gameOver=false;
+    player.y=0; player.vy=0; player.ducking=false;
+    window.__scoreSubmitted = false;
+    hintEl.textContent = "↑ Jump • ↓ Duck • R Restart";
+    animFrame = requestAnimationFrame(loop);
+  }
+
   window.addEventListener('keydown',e=>{
     if(e.code==="ArrowUp" && !gameOver){ player.jump(); }
     if(e.code==="ArrowDown"){ player.ducking=true; }
@@ -118,7 +125,6 @@
   }
 
   function overlap(a,b,pad){
-    // shrink obstacle box slightly to avoid unfair collisions
     const bb = {x:b.x+pad, y:b.y+pad, w:b.w-2*pad, h:b.h-2*pad};
     return !(a.x+a.w<bb.x || a.x>bb.x+bb.w || a.y+a.h<bb.y || a.y>bb.y+bb.h);
   }
@@ -129,7 +135,6 @@
 
     // Background
     ctx.fillStyle="#87CEEB"; ctx.fillRect(0,0,W,H);
-    // trees
     treeTimer -= dt;
     if(treeTimer<=0){ spawnTree(); treeTimer = 2200 + Math.random()*1200; }
     ctx.fillStyle="#228B22";
@@ -138,21 +143,17 @@
       ctx.fillRect(t.x, t.y-t.h, 40, t.h);
       if(t.x+40<0) trees.splice(i,1);
     }
-    // ground
     ctx.fillStyle="#228B22"; ctx.fillRect(0,groundY,W,H-groundY);
 
-    // Obstacles spawning, paced by speed like Dino
+    // Obstacles
     obstacleTimer -= dt;
     if(obstacleTimer<=0){
       spawnObstacle();
-      // distance-based spacing to avoid unavoidable combos
-      const minGap = 520 - speed*20;  // pixels of travel
+      const minGap = 520 - speed*20;
       const maxGap = 820 - speed*30;
-      const ms = (Math.random()*(maxGap-minGap)+minGap) / (speed*60); // convert distance to seconds at current speed
+      const ms = (Math.random()*(maxGap-minGap)+minGap) / (speed*60);
       obstacleTimer = ms*1000;
     }
-
-    // Update obstacles
     for(let i=obstacles.length-1;i>=0;i--){
       let o=obstacles[i];
       o.x -= speed;
@@ -164,38 +165,37 @@
     player.update(dt);
     player.draw(ctx);
 
-    // Collisions with padding for fairness
+    // Collisions
     const hb = player.hitbox();
     for(const o of obstacles){
       if(overlap(hb, o, 6)){ gameOver=true; break; }
     }
 
-    // Score & progressive speed-up (Dino-like: gentle continuous increase)
+    // Score
     if(!gameOver){
-      score += dt * 0.06;                         // ~3.6 pts/sec
-      // speed rises slowly with score; harder very gradually
+      score += dt * 0.06;
       const target = Math.min(maxSpeed, 6.5 + Math.floor(score/100)*0.4);
-      // ease towards target
       speed += (target - speed) * 0.02;
       scoreEl.textContent = "Score: " + Math.floor(score);
       hintEl.textContent = "";
-      requestAnimationFrame(loop);
+      animFrame = requestAnimationFrame(loop);
     } else {
       ctx.fillStyle="rgba(0,0,0,0.55)"; ctx.fillRect(0,0,W,H);
       ctx.fillStyle="#fff"; ctx.textAlign="center";
       ctx.font="bold 32px Arial"; ctx.fillText("Game Over", W/2, H/2 - 10);
       ctx.font="18px Arial"; ctx.fillText("Press R to Restart", W/2, H/2 + 26);
-if(!window.__scoreSubmitted){
-  window.__scoreSubmitted = true;
-  reportScore(Math.floor(score));   // << Firebase’e kaydet
-}
+      if(!window.__scoreSubmitted){
+        window.__scoreSubmitted = true;
+        reportScore(Math.floor(score));
+      }
     }
   }
 
-  cowImg.onload=()=>requestAnimationFrame(loop);
+  cowImg.onload=()=>{ animFrame = requestAnimationFrame(loop); };
 })();
+</script>
+
 <script type="module">
-  // Firebase SDK (CDN)
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-analytics.js";
   import {
@@ -203,7 +203,6 @@ if(!window.__scoreSubmitted){
     query, orderBy, limit, getDocs
   } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
 
-  // YOUR CONFIG
   const firebaseConfig = {
     apiKey: "AIzaSyB_dsSpZFDAg-ZZggB_tYf8zFYETyBUL7w",
     authDomain: "comm-dfa54.firebaseapp.com",
@@ -214,16 +213,12 @@ if(!window.__scoreSubmitted){
     measurementId: "G-YVVWZKXXJ6"
   };
 
-  // Init
   const app = initializeApp(firebaseConfig);
-
-  // Analytics bazen HTTPS hazır değilken hata fırlatır; oyunu durdurmasın diye try/catch
   try { getAnalytics(app); } catch (e) { console.warn("Analytics skipped:", e?.message || e); }
 
   const db = getFirestore(app);
   const scoresRef = collection(db, "scores");
 
-  // --- Leaderboard helpers ---
   window.reportScore = async function(score){
     try{
       const key = "commonrunner_name";
@@ -265,14 +260,6 @@ if(!window.__scoreSubmitted){
       list.innerHTML = "<li>Failed to load scores.</li>";
     }
   }
-
-  // UI bağlama
-  const btn = document.getElementById("lbBtn");
-  const closeBtn = document.getElementById("lbClose");
-  const modal = document.getElementById("lbModal");
-  if (btn) btn.onclick = ()=> openLeaderboard();
-  if (closeBtn) closeBtn.onclick = ()=> (modal.style.display="none");
-  if (modal) modal.onclick = (e)=>{ if(e.target.id==="lbModal") modal.style.display="none"; };
 </script>
 </body>
 </html>
