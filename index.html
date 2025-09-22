@@ -3,19 +3,67 @@
 <head>
   <meta charset="UTF-8" />
   <title>Common Runner (Lamumu Arc.)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { margin:0; background:#87CEEB; overflow:hidden; font-family:sans-serif; }
-    canvas { display:block; width:100vw; height:100vh; background:#87CEEB; }
-    .hud { position:fixed; top:10px; left:0; right:0; text-align:center; font-size:24px; color:#fff; text-shadow:0 2px 4px rgba(0,0,0,0.5); }
-    .score { position:fixed; top:10px; right:10px; font-size:22px; background:rgba(255,255,255,0.7); padding:6px 10px; border-radius:8px; }
-    .hint { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,.8); padding:6px 10px; border-radius:8px; font-size:14px;}
+    :root { --sky:#87CEEB; --grass:#228B22; --glass:#ffffff; }
+    *{box-sizing:border-box}
+    body { margin:0; background:var(--sky); overflow:hidden; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,sans-serif; }
+    canvas { display:block; width:100vw; height:100vh; background:var(--sky); }
+    .hud { position:fixed; top:10px; left:0; right:0; text-align:center; font-size:24px; color:#fff; text-shadow:0 2px 4px rgba(0,0,0,0.5); pointer-events:none; }
+    .logo { position:fixed; top:10px; left:10px; width:60px; }
+    .score { position:fixed; top:10px; right:10px; font-size:22px; background:rgba(255,255,255,0.82); padding:6px 10px; border-radius:10px; }
+    .hint { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,.85); padding:6px 10px; border-radius:10px; font-size:14px; }
+
+    /* Leaderboard UI */
+    .lb-btn{
+      position:fixed; right:14px; bottom:14px;
+      padding:10px 12px; border-radius:12px; border:none;
+      background:rgba(255,255,255,0.9); cursor:pointer; font-size:16px;
+      box-shadow:0 6px 18px rgba(0,0,0,.15);
+    }
+    .lb-modal{
+      position:fixed; inset:0; background:rgba(0,0,0,.5);
+      display:none; align-items:center; justify-content:center; z-index:9999;
+    }
+    .lb-card{
+      width:min(420px, 92vw); max-height:72vh; overflow:auto;
+      background:#fff; border-radius:16px; padding:16px 16px 10px;
+      box-shadow:0 18px 60px rgba(0,0,0,.35);
+    }
+    .lb-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .lb-head h3{ margin:0; font-size:20px; }
+    .lb-close{
+      border:none; background:#eee; border-radius:10px; padding:6px 10px; cursor:pointer;
+    }
+    .lb-list{ margin:12px 0 0; padding-left:22px; }
+    .lb-list li{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:8px 6px; border-bottom:1px dashed #eee; font-size:16px;
+    }
   </style>
 </head>
 <body>
   <div class="hud">Common Runner <small>(Lamumu Arc.)</small></div>
+  <!-- İstersen logonu buraya koy -->
+  <!-- <img class="logo" src="./your-logo.png" alt="logo" /> -->
   <div class="score" id="score">Score: 0</div>
-  <div class="hint" id="hint">↑ Jump • ↓ Duck • R Restart</div>
+  <div class="hint" id="hint">↑ Jump • ↓ Duck • R Restart • 🏆 Leaderboard</div>
   <canvas id="game"></canvas>
+
+  <!-- Leaderboard Button -->
+  <button id="lbBtn" class="lb-btn">🏆 Leaderboard</button>
+  <!-- Leaderboard Modal -->
+  <div id="lbModal" class="lb-modal">
+    <div class="lb-card">
+      <div class="lb-head">
+        <h3>Leaderboard</h3>
+        <button id="lbClose" class="lb-close">✕</button>
+      </div>
+      <ol id="lbList" class="lb-list">
+        <!-- JS dolduracak -->
+      </ol>
+    </div>
+  </div>
 
 <script>
 (() => {
@@ -23,6 +71,7 @@
   const ctx = canvas.getContext('2d');
   const scoreEl = document.getElementById('score');
   const hintEl  = document.getElementById('hint');
+
   let W, H, groundY;
   function resize(){
     W = canvas.width = window.innerWidth;
@@ -32,107 +81,263 @@
   window.addEventListener('resize', resize);
   resize();
 
-  // Player
-  const player = { 
-    x:90, y:0, vy:0, width:60, height:60, frame:0, frameTick:0, ducking:false,
+  // ---- Global flags ----
+  window.__scoreSubmitted = false;
+  let animFrame;
+
+  // ---- Assets (opsiyonel görsel; yoksa kare çizecek) ----
+  const cowImg = new Image();
+  cowImg.src = "./20250921_2312_3D Pixel Character Design_remix_01k5pyekm6e2e9e21az6gprrtb.png";
+  let cowReady = false;
+  cowImg.onload = () => { cowReady = true; };
+
+  // ---- Player ----
+  const player = {
+    x:90, y:0, vy:0, width:100, height:100, frame:0, frameTick:0, ducking:false,
     jump(){ if(this.y<=0){ this.vy=16; this.y=1; } },
     update(dt){
       if(this.y>0 || this.vy>0){ this.vy -= 0.8; this.y += this.vy; if(this.y<0){ this.y=0; this.vy=0; } }
+      this.frameTick += dt; if(this.frameTick>100){ this.frame=(this.frame+1)%2; this.frameTick=0; }
     },
     draw(ctx){
-      const h = this.height, w = this.width;
+      let scale = 0.9 + (this.frame*0.05);
+      let h = this.height*scale;
+      let w = this.width*scale;
       const x = this.x, y = groundY-h-this.y;
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(x, y, w, h);
+      ctx.save();
+      ctx.translate(x + w/2, y + h/2);
+      ctx.scale(-1, 1); // sağa bak
+      ctx.imageSmoothingEnabled = false;
+      if (cowReady){
+        ctx.drawImage(cowImg, -w/2, -h/2, w, h);
+      } else {
+        ctx.fillStyle = "#fff"; ctx.fillRect(-w/2, -h/2, w, h); // fallback kare
+      }
+      ctx.restore();
+      // shadow
+      ctx.globalAlpha = 0.14;
+      ctx.beginPath();
+      ctx.ellipse(x + w*0.5, groundY + 6, 40, 10, 0, 0, Math.PI*2);
+      ctx.fillStyle = "#000"; ctx.fill();
+      ctx.globalAlpha = 1;
     },
     hitbox(){
-      return {x:this.x, y:groundY-this.height-this.y, w:this.width, h:this.height};
+      return {x:this.x+6, y:groundY-this.height-this.y+4, w:this.width-12, h:this.height-8};
     }
   };
 
-  // Obstacles
+  // ---- Obstacles ----
   let obstacles=[], obstacleTimer=0;
   function spawnObstacle(){
     const h = 40+Math.random()*40;
-    const w = 20+Math.random()*20;
+    const w = 44+Math.random()*20;
     obstacles.push({x:W, y:groundY-h, w, h});
   }
 
-  // Game state
+  // ---- Parallax trees ----
+  const trees=[];
+  function spawnTree(){ trees.push({x:W, y:groundY-120, h:100+Math.random()*80}); }
+  let treeTimer=0;
+
+  // ---- Game state ----
   let last=0, score=0, gameOver=false;
   let speed = 6.5;
   const maxSpeed = 14;
-  let animFrame;
 
-  // Restart
-  function restart(){
-    cancelAnimationFrame(animFrame);
-    ctx.clearRect(0,0,W,H);
-    obstacles.length=0;
-    obstacleTimer = 0; score=0; speed=6.5; last=0; gameOver=false;
-    player.y=0; player.vy=0; player.ducking=false;
-    hintEl.textContent = "↑ Jump • ↓ Duck • R Restart";
-    animFrame = requestAnimationFrame(loop);
-  }
-
+  // ---- Input ----
   window.addEventListener('keydown',e=>{
     if(e.code==="ArrowUp" && !gameOver){ player.jump(); }
+    if(e.code==="ArrowDown"){ player.ducking=true; }
     if(e.code==="KeyR"){ restart(); }
   });
+  window.addEventListener('keyup',e=>{ if(e.code==="ArrowDown"){ player.ducking=false; } });
 
-  function overlap(a,b){
-    return !(a.x+a.w<b.x || a.x>b.x+b.w || a.y+a.h<b.y || a.y>b.y+b.h);
+  // ---- Helpers ----
+  function drawFence(o){
+    const postW = Math.max(6, Math.floor(o.w*0.22));
+    const railH = Math.max(5, Math.floor(o.h*0.16));
+    ctx.fillStyle="#8B5A2B";
+    ctx.fillRect(o.x, o.y, postW, o.h);
+    ctx.fillRect(o.x + o.w - postW, o.y, postW, o.h);
+    ctx.fillStyle="#A0522D";
+    const r1y = o.y + Math.floor(o.h*0.35);
+    const r2y = o.y + Math.floor(o.h*0.68);
+    ctx.fillRect(o.x, r1y, o.w, railH);
+    ctx.fillRect(o.x, r2y, o.w, railH);
+  }
+  function overlap(a,b,pad=0){
+    const bb = {x:b.x+pad, y:b.y+pad, w:b.w-2*pad, h:b.h-2*pad};
+    return !(a.x+a.w<bb.x || a.x>bb.x+bb.w || a.y+a.h<bb.y || a.y>bb.y+bb.h);
   }
 
+  // ---- Loop ----
   function loop(ts){
     const dt = Math.min(34, ts - last || 16); last = ts;
     ctx.clearRect(0,0,W,H);
 
-    // Background
-    ctx.fillStyle="#87CEEB"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="#228B22"; ctx.fillRect(0,groundY,W,H-groundY);
+    // bg
+    ctx.fillStyle= getComputedStyle(document.body).backgroundColor || "#87CEEB";
+    ctx.fillRect(0,0,W,H);
 
-    // Obstacles
+    // trees
+    treeTimer -= dt;
+    if(treeTimer<=0){ spawnTree(); treeTimer = 2200 + Math.random()*1200; }
+    ctx.fillStyle= getComputedStyle(document.documentElement).getPropertyValue('--grass') || "#228B22";
+    for(let i=trees.length-1;i>=0;i--){
+      let t=trees[i]; t.x -= 2;
+      ctx.fillRect(t.x, t.y-t.h, 40, t.h);
+      if(t.x+40<0) trees.splice(i,1);
+    }
+    ctx.fillRect(0,groundY,W,H-groundY);
+
+    // obstacles
     obstacleTimer -= dt;
     if(obstacleTimer<=0){
       spawnObstacle();
-      const ms = 1000 + Math.random()*1000;
-      obstacleTimer = ms;
+      const minGap = 520 - speed*20;
+      const maxGap = 820 - speed*30;
+      const ms = (Math.random()*(maxGap-minGap)+minGap) / (speed*60);
+      obstacleTimer = ms*1000;
     }
     for(let i=obstacles.length-1;i>=0;i--){
       let o=obstacles[i];
       o.x -= speed;
-      ctx.fillStyle="#8B0000";
-      ctx.fillRect(o.x, o.y, o.w, o.h);
+      drawFence(o);
       if(o.x+o.w<0) obstacles.splice(i,1);
     }
 
-    // Player
+    // player
     player.update(dt);
     player.draw(ctx);
 
-    // Collisions
+    // collisions
     const hb = player.hitbox();
     for(const o of obstacles){
-      if(overlap(hb, o)){ gameOver=true; break; }
+      if(overlap(hb, o, 6)){ gameOver=true; break; }
     }
 
-    // Score
+    // score & speed
     if(!gameOver){
       score += dt * 0.06;
-      speed = Math.min(maxSpeed, speed+0.002);
+      const target = Math.min(maxSpeed, 6.5 + Math.floor(score/100)*0.4);
+      speed += (target - speed) * 0.02;
       scoreEl.textContent = "Score: " + Math.floor(score);
+      hintEl.textContent = "";
       animFrame = requestAnimationFrame(loop);
     } else {
+      // game over screen
       ctx.fillStyle="rgba(0,0,0,0.55)"; ctx.fillRect(0,0,W,H);
       ctx.fillStyle="#fff"; ctx.textAlign="center";
       ctx.font="bold 32px Arial"; ctx.fillText("Game Over", W/2, H/2 - 10);
       ctx.font="18px Arial"; ctx.fillText("Press R to Restart", W/2, H/2 + 26);
+      if(!window.__scoreSubmitted){
+        window.__scoreSubmitted = true;
+        if (typeof reportScore === "function") {
+          reportScore(Math.floor(score));
+        }
+      }
     }
   }
 
+  // ---- Restart ----
+  function restart(){
+    cancelAnimationFrame(animFrame);     // eski döngüyü durdur
+    ctx.clearRect(0,0,W,H);              // ekran temizle
+    obstacles.length=0; trees.length=0;
+    obstacleTimer = 0; treeTimer=0;
+    score=0; speed=6.5; last=0; gameOver=false;
+    player.y=0; player.vy=0; player.ducking=false;
+    window.__scoreSubmitted = false;
+    hintEl.textContent = "↑ Jump • ↓ Duck • R Restart • 🏆 Leaderboard";
+    animFrame = requestAnimationFrame(loop); // yeni döngü
+  }
+
+  // ---- Start ----
   animFrame = requestAnimationFrame(loop);
+
+  // ---- Leaderboard UI bağlama (butonlar bu sayfada) ----
+  window.openLeaderboard = async function(){
+    const modal = document.getElementById("lbModal");
+    const list  = document.getElementById("lbList");
+    if (!modal || !list) return alert("Leaderboard UI not found.");
+    list.innerHTML = "<li>Loading…</li>";
+    modal.style.display = "flex";
+    try{
+      if (typeof fetchTopScores === "function") {
+        const rows = await fetchTopScores(10);
+        list.innerHTML = rows.length
+          ? rows.map((r,i)=>`<li><span>${i+1}. ${r.name||"Anon"}</span><b>${r.score||0}</b></li>`).join("")
+          : "<li>No scores yet</li>";
+      } else {
+        list.innerHTML = "<li>Leaderboard backend disabled.</li>";
+      }
+    }catch(e){
+      console.error(e);
+      list.innerHTML = "<li>Failed to load scores.</li>";
+    }
+  };
+
+  const btn = document.getElementById("lbBtn");
+  const closeBtn = document.getElementById("lbClose");
+  const modal = document.getElementById("lbModal");
+  if (btn) btn.onclick = ()=> openLeaderboard();
+  if (closeBtn) closeBtn.onclick = ()=> (modal.style.display="none");
+  if (modal) modal.onclick = (e)=>{ if(e.target.id==="lbModal") modal.style.display="none"; };
 })();
+</script>
+
+<!-- Firebase + Firestore (opsiyonel leaderboard backend) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-analytics.js";
+  import {
+    getFirestore, collection, addDoc, serverTimestamp,
+    query, orderBy, limit, getDocs
+  } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+
+  // ---- CONFIGİNİ BURADA KULLANIYORSUN ----
+  const firebaseConfig = {
+    apiKey: "AIzaSyB_dsSpZFDAg-ZZggB_tYf8zFYETyBUL7w",
+    authDomain: "comm-dfa54.firebaseapp.com",
+    projectId: "comm-dfa54",
+    storageBucket: "comm-dfa54.firebasestorage.app",
+    messagingSenderId: "130174378386",
+    appId: "1:130174378386:web:0046c07273d731d530e14b",
+    measurementId: "G-YVVWZKXXJ6"
+  };
+
+  // Init
+  const app = initializeApp(firebaseConfig);
+  try { getAnalytics(app); } catch (e) { console.warn("Analytics skipped:", e?.message || e); }
+
+  const db = getFirestore(app);
+  const scoresRef = collection(db, "scores");
+
+  // --- Leaderboard helpers (global fonksiyonlar) ---
+  window.reportScore = async function(score){
+    try{
+      const key = "commonrunner_name";
+      let name = localStorage.getItem(key) || prompt("Your name for the leaderboard?");
+      if(!name) return;
+      localStorage.setItem(key, name);
+
+      await addDoc(scoresRef, {
+        name: String(name).slice(0,16),
+        score: Number(score) || 0,
+        createdAt: serverTimestamp()
+      });
+      if (typeof openLeaderboard === "function") openLeaderboard();
+    }catch(e){
+      console.error(e);
+      alert("Score could not be saved. Please try again later.");
+    }
+  }
+
+  window.fetchTopScores = async function(n=10){
+    const q = query(scoresRef, orderBy("score","desc"), limit(n));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data());
+  }
 </script>
 </body>
 </html>
