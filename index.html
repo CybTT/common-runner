@@ -7,14 +7,12 @@
     body { margin:0; background:#87CEEB; overflow:hidden; font-family:sans-serif; }
     canvas { display:block; width:100vw; height:100vh; background:#87CEEB; }
     .hud { position:fixed; top:10px; left:0; right:0; text-align:center; font-size:24px; color:#fff; text-shadow:0 2px 4px rgba(0,0,0,0.5); }
-    .logo { position:fixed; top:10px; left:10px; width:60px; }
     .score { position:fixed; top:10px; right:10px; font-size:22px; background:rgba(255,255,255,0.7); padding:6px 10px; border-radius:8px; }
     .hint { position:fixed; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,.8); padding:6px 10px; border-radius:8px; font-size:14px;}
   </style>
 </head>
 <body>
   <div class="hud">Common Runner <small>(Lamumu Arc.)</small></div>
-  <img class="logo" src="./993CBC1B-E669-4592-ABDF-9A7AA70BD8DC.png" />
   <div class="score" id="score">Score: 0</div>
   <div class="hint" id="hint">↑ Jump • ↓ Duck • R Restart</div>
   <canvas id="game"></canvas>
@@ -34,41 +32,21 @@
   window.addEventListener('resize', resize);
   resize();
 
-  // Assets
-  const cowImg = new Image();
-  cowImg.src = "./20250921_2312_3D Pixel Character Design_remix_01k5pyekm6e2e9e21az6gprrtb.png";
-
-  // Global state
-  window.__scoreSubmitted = false;
-  let animFrame;
-
   // Player
   const player = { 
-    x:90, y:0, vy:0, width:100, height:100, frame:0, frameTick:0, ducking:false,
+    x:90, y:0, vy:0, width:60, height:60, frame:0, frameTick:0, ducking:false,
     jump(){ if(this.y<=0){ this.vy=16; this.y=1; } },
     update(dt){
       if(this.y>0 || this.vy>0){ this.vy -= 0.8; this.y += this.vy; if(this.y<0){ this.y=0; this.vy=0; } }
-      this.frameTick += dt; if(this.frameTick>100){ this.frame=(this.frame+1)%2; this.frameTick=0; }
     },
     draw(ctx){
-      let scale = 0.9 + (this.frame*0.05);
-      let h = this.height*scale;
-      let w = this.width*scale;
+      const h = this.height, w = this.width;
       const x = this.x, y = groundY-h-this.y;
-      ctx.save();
-      ctx.translate(x + w/2, y + h/2);
-      ctx.scale(-1, 1);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(cowImg, -w/2, -h/2, w, h);
-      ctx.restore();
-      ctx.globalAlpha = 0.14;
-      ctx.beginPath();
-      ctx.ellipse(x + w*0.5, groundY + 6, 40, 10, 0, 0, Math.PI*2);
-      ctx.fillStyle = "#000"; ctx.fill();
-      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(x, y, w, h);
     },
     hitbox(){
-      return {x:this.x+6, y:groundY-this.height-this.y+4, w:this.width-12, h:this.height-8};
+      return {x:this.x, y:groundY-this.height-this.y, w:this.width, h:this.height};
     }
   };
 
@@ -76,57 +54,34 @@
   let obstacles=[], obstacleTimer=0;
   function spawnObstacle(){
     const h = 40+Math.random()*40;
-    const w = 44+Math.random()*20;
+    const w = 20+Math.random()*20;
     obstacles.push({x:W, y:groundY-h, w, h});
   }
-
-  // Trees
-  const trees=[];
-  function spawnTree(){ trees.push({x:W, y:groundY-120, h:100+Math.random()*80}); }
-  let treeTimer=0;
 
   // Game state
   let last=0, score=0, gameOver=false;
   let speed = 6.5;
   const maxSpeed = 14;
+  let animFrame;
 
   // Restart
   function restart(){
-    cancelAnimationFrame(animFrame);      // eski döngüyü kes
-    ctx.clearRect(0,0,W,H);               // ekran temizle
+    cancelAnimationFrame(animFrame);
+    ctx.clearRect(0,0,W,H);
     obstacles.length=0;
-    trees.length=0;
-    obstacleTimer = 0; treeTimer=0;
-    score=0; speed=6.5; last=0; gameOver=false;
+    obstacleTimer = 0; score=0; speed=6.5; last=0; gameOver=false;
     player.y=0; player.vy=0; player.ducking=false;
-    window.__scoreSubmitted = false;
     hintEl.textContent = "↑ Jump • ↓ Duck • R Restart";
     animFrame = requestAnimationFrame(loop);
   }
 
   window.addEventListener('keydown',e=>{
     if(e.code==="ArrowUp" && !gameOver){ player.jump(); }
-    if(e.code==="ArrowDown"){ player.ducking=true; }
     if(e.code==="KeyR"){ restart(); }
   });
-  window.addEventListener('keyup',e=>{ if(e.code==="ArrowDown"){ player.ducking=false; } });
 
-  function drawFence(o){
-    const postW = Math.max(6, Math.floor(o.w*0.22));
-    const railH = Math.max(5, Math.floor(o.h*0.16));
-    ctx.fillStyle="#8B5A2B";
-    ctx.fillRect(o.x, o.y, postW, o.h);
-    ctx.fillRect(o.x + o.w - postW, o.y, postW, o.h);
-    ctx.fillStyle="#A0522D";
-    const r1y = o.y + Math.floor(o.h*0.35);
-    const r2y = o.y + Math.floor(o.h*0.68);
-    ctx.fillRect(o.x, r1y, o.w, railH);
-    ctx.fillRect(o.x, r2y, o.w, railH);
-  }
-
-  function overlap(a,b,pad){
-    const bb = {x:b.x+pad, y:b.y+pad, w:b.w-2*pad, h:b.h-2*pad};
-    return !(a.x+a.w<bb.x || a.x>bb.x+bb.w || a.y+a.h<bb.y || a.y>bb.y+bb.h);
+  function overlap(a,b){
+    return !(a.x+a.w<b.x || a.x>b.x+b.w || a.y+a.h<b.y || a.y>b.y+b.h);
   }
 
   function loop(ts){
@@ -135,29 +90,20 @@
 
     // Background
     ctx.fillStyle="#87CEEB"; ctx.fillRect(0,0,W,H);
-    treeTimer -= dt;
-    if(treeTimer<=0){ spawnTree(); treeTimer = 2200 + Math.random()*1200; }
-    ctx.fillStyle="#228B22";
-    for(let i=trees.length-1;i>=0;i--){
-      let t=trees[i]; t.x -= 2;
-      ctx.fillRect(t.x, t.y-t.h, 40, t.h);
-      if(t.x+40<0) trees.splice(i,1);
-    }
     ctx.fillStyle="#228B22"; ctx.fillRect(0,groundY,W,H-groundY);
 
     // Obstacles
     obstacleTimer -= dt;
     if(obstacleTimer<=0){
       spawnObstacle();
-      const minGap = 520 - speed*20;
-      const maxGap = 820 - speed*30;
-      const ms = (Math.random()*(maxGap-minGap)+minGap) / (speed*60);
-      obstacleTimer = ms*1000;
+      const ms = 1000 + Math.random()*1000;
+      obstacleTimer = ms;
     }
     for(let i=obstacles.length-1;i>=0;i--){
       let o=obstacles[i];
       o.x -= speed;
-      drawFence(o);
+      ctx.fillStyle="#8B0000";
+      ctx.fillRect(o.x, o.y, o.w, o.h);
       if(o.x+o.w<0) obstacles.splice(i,1);
     }
 
@@ -168,98 +114,25 @@
     // Collisions
     const hb = player.hitbox();
     for(const o of obstacles){
-      if(overlap(hb, o, 6)){ gameOver=true; break; }
+      if(overlap(hb, o)){ gameOver=true; break; }
     }
 
     // Score
     if(!gameOver){
       score += dt * 0.06;
-      const target = Math.min(maxSpeed, 6.5 + Math.floor(score/100)*0.4);
-      speed += (target - speed) * 0.02;
+      speed = Math.min(maxSpeed, speed+0.002);
       scoreEl.textContent = "Score: " + Math.floor(score);
-      hintEl.textContent = "";
       animFrame = requestAnimationFrame(loop);
     } else {
       ctx.fillStyle="rgba(0,0,0,0.55)"; ctx.fillRect(0,0,W,H);
       ctx.fillStyle="#fff"; ctx.textAlign="center";
       ctx.font="bold 32px Arial"; ctx.fillText("Game Over", W/2, H/2 - 10);
       ctx.font="18px Arial"; ctx.fillText("Press R to Restart", W/2, H/2 + 26);
-      if(!window.__scoreSubmitted){
-        window.__scoreSubmitted = true;
-        reportScore(Math.floor(score));
-      }
     }
   }
 
-  cowImg.onload=()=>{ animFrame = requestAnimationFrame(loop); };
+  animFrame = requestAnimationFrame(loop);
 })();
-</script>
-
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-analytics.js";
-  import {
-    getFirestore, collection, addDoc, serverTimestamp,
-    query, orderBy, limit, getDocs
-  } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyB_dsSpZFDAg-ZZggB_tYf8zFYETyBUL7w",
-    authDomain: "comm-dfa54.firebaseapp.com",
-    projectId: "comm-dfa54",
-    storageBucket: "comm-dfa54.firebasestorage.app",
-    messagingSenderId: "130174378386",
-    appId: "1:130174378386:web:0046c07273d731d530e14b",
-    measurementId: "G-YVVWZKXXJ6"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  try { getAnalytics(app); } catch (e) { console.warn("Analytics skipped:", e?.message || e); }
-
-  const db = getFirestore(app);
-  const scoresRef = collection(db, "scores");
-
-  window.reportScore = async function(score){
-    try{
-      const key = "commonrunner_name";
-      let name = localStorage.getItem(key) || prompt("Your name for the leaderboard?");
-      if(!name) return;
-      localStorage.setItem(key, name);
-
-      await addDoc(scoresRef, {
-        name: String(name).slice(0,16),
-        score: Number(score) || 0,
-        createdAt: serverTimestamp()
-      });
-      openLeaderboard();
-    }catch(e){
-      console.error(e);
-      alert("Score could not be saved. Please try again later.");
-    }
-  }
-
-  async function fetchTopScores(n=10){
-    const q = query(scoresRef, orderBy("score","desc"), limit(n));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data());
-  }
-
-  window.openLeaderboard = async function(){
-    const modal = document.getElementById("lbModal");
-    const list  = document.getElementById("lbList");
-    if (!modal || !list) return alert("Leaderboard UI not found.");
-    list.innerHTML = "<li>Loading…</li>";
-    modal.style.display = "flex";
-    try{
-      const rows = await fetchTopScores(10);
-      list.innerHTML = rows.length
-        ? rows.map((r,i)=>`<li><span>${i+1}. ${r.name||"Anon"}</span><b>${r.score||0}</b></li>`).join("")
-        : "<li>No scores yet</li>";
-    }catch(e){
-      console.error(e);
-      list.innerHTML = "<li>Failed to load scores.</li>";
-    }
-  }
 </script>
 </body>
 </html>
