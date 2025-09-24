@@ -36,9 +36,12 @@
   resize();
 
   /* ======== KV Leaderboard helper'ları ======== */
+  // kendi Worker domainini buraya yaz:
+  const API_BASE = "https://<YOUR_WORKER>.workers.dev";
+
   async function postScoreKV(nickname, score){
     try{
-      const res = await fetch("/api/leaderboard", {
+      const res = await fetch(`${API_BASE}/api/leaderboard`, {
         method: "POST",
         headers: {"content-type":"application/json"},
         body: JSON.stringify({ nickname, score })
@@ -49,8 +52,8 @@
 
   async function drawTop50OnCanvas(){
     try{
-      const res = await fetch("/api/leaderboard?limit=50");
-      const data = await res.json();               // { ok:true, results:[{name,score}] }
+      const res = await fetch(`${API_BASE}/api/leaderboard?limit=50`);
+      const data = await res.json();               
       const list = (data && data.results) ? data.results : [];
 
       ctx.textAlign = "center";
@@ -59,7 +62,6 @@
       ctx.fillText("Leaderboard (Top 50)", W/2, H/2 + 90);
 
       ctx.font = "18px Arial";
-      // ekrana taşmaması için ilk ~12 satırı gösteriyoruz
       list.slice(0,12).forEach((e,i)=>{
         const name = e.name || e.nickname || "anon";
         ctx.fillText(`${i+1}. ${name} — ${e.score}`, W/2, H/2 + 120 + i*24);
@@ -68,11 +70,9 @@
   }
   /* =========================================== */
 
-  // Assets
   const cowImg = new Image();
   cowImg.src = "./20250921_2312_3D Pixel Character Design_remix_01k5pyekm6e2e9e21az6gprrtb.png";
 
-  // Player (facing right, slightly larger)
   const player = { x:90, y:0, vy:0, width:100, height:100, frame:0, frameTick:0, ducking:false,
     jump(){ if(this.y<=0){ this.vy=16; this.y=1; } },
     update(dt){
@@ -86,11 +86,10 @@
       const x = this.x, y = groundY-h-this.y;
       ctx.save();
       ctx.translate(x + w/2, y + h/2);
-      ctx.scale(-1, 1); // face right
+      ctx.scale(-1, 1);
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(cowImg, -w/2, -h/2, w, h);
       ctx.restore();
-      // shadow
       ctx.globalAlpha = 0.14;
       ctx.beginPath();
       ctx.ellipse(x + w*0.5, groundY + 6, 40, 10, 0, 0, Math.PI*2);
@@ -102,7 +101,6 @@
     }
   };
 
-  // Obstacles
   let obstacles=[], obstacleTimer=0;
   function spawnObstacle(){
     const h = 40+Math.random()*40;
@@ -110,25 +108,21 @@
     obstacles.push({x:W, y:groundY-h, w, h});
   }
 
-  // Simple parallax trees
   const trees=[];
   function spawnTree(){ trees.push({x:W, y:groundY-120, h:100+Math.random()*80}); }
   let treeTimer=0;
 
-  // Game state
   let last=0, score=0, gameOver=false;
   let speed = 6.5;
   const maxSpeed = 14;
 
-  // Restart
   function restart(){
-    obstacles.length=0;
-    trees.length=0;
+    obstacles.length=0; trees.length=0;
     obstacleTimer = 0; treeTimer=0;
     score=0; speed=6.5; last=0; gameOver=false;
     player.y=0; player.vy=0; player.ducking=false;
     hintEl.textContent = "↑ Jump • ↓ Duck • R Restart";
-    window.__submitted = false; // yeni oyunda tekrar submit edebilsin
+    window.__submitted = false;
     requestAnimationFrame(loop);
   }
   window.addEventListener('keydown',e=>{
@@ -160,9 +154,7 @@
     const dt = Math.min(34, ts - last || 16); last = ts;
     ctx.clearRect(0,0,W,H);
 
-    // Background
     ctx.fillStyle="#87CEEB"; ctx.fillRect(0,0,W,H);
-    // trees
     treeTimer -= dt;
     if(treeTimer<=0){ spawnTree(); treeTimer = 2200 + Math.random()*1200; }
     ctx.fillStyle="#228B22";
@@ -171,10 +163,8 @@
       ctx.fillRect(t.x, t.y-t.h, 40, t.h);
       if(t.x+40<0) trees.splice(i,1);
     }
-    // ground
     ctx.fillStyle="#228B22"; ctx.fillRect(0,groundY,W,H-groundY);
 
-    // Obstacles spawning
     obstacleTimer -= dt;
     if(obstacleTimer<=0){
       spawnObstacle();
@@ -184,7 +174,6 @@
       obstacleTimer = ms*1000;
     }
 
-    // Update obstacles
     for(let i=obstacles.length-1;i>=0;i--){
       let o=obstacles[i];
       o.x -= speed;
@@ -192,19 +181,16 @@
       if(o.x+o.w<0) obstacles.splice(i,1);
     }
 
-    // Player
     player.update(dt);
     player.draw(ctx);
 
-    // Collisions
     const hb = player.hitbox();
     for(const o of obstacles){
       if(overlap(hb, o, 6)){ gameOver=true; break; }
     }
 
-    // Score & speed-up
     if(!gameOver){
-      score += dt * 0.06; // ~3.6 pts/sec
+      score += dt * 0.06;
       const target = Math.min(maxSpeed, 6.5 + Math.floor(score/100)*0.4);
       speed += (target - speed) * 0.02;
       scoreEl.textContent = "Score: " + Math.floor(score);
@@ -216,16 +202,14 @@
       ctx.font="bold 32px Arial"; ctx.fillText("Game Over", W/2, H/2 - 10);
       ctx.font="18px Arial"; ctx.fillText("Press R to Restart", W/2, H/2 + 26);
 
-      // === Leaderboard işlemleri ===
       const finalScore = Math.floor(score);
       if (!window.__submitted) {
         window.__submitted = true;
         let def = localStorage.getItem('name') || "YOU";
-        let name = (prompt("İsmin (max 12):", def) || def).trim().slice(0,12) || "YOU";
+        let name = (prompt("Enter your name (max 12):", def) || def).trim().slice(0,12) || "YOU";
         localStorage.setItem('name', name);
         postScoreKV(name, finalScore).then(()=> drawTop50OnCanvas());
       }
-      // Ağ gecikirse de en azından bir çizim yapalım
       drawTop50OnCanvas();
     }
   }
