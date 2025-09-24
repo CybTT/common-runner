@@ -26,6 +26,7 @@
   const scoreEl = document.getElementById('score');
   const hintEl  = document.getElementById('hint');
   let W, H, groundY;
+
   function resize(){
     W = canvas.width = window.innerWidth;
     H = canvas.height = window.innerHeight;
@@ -33,6 +34,39 @@
   }
   window.addEventListener('resize', resize);
   resize();
+
+  /* ======== KV Leaderboard helper'ları ======== */
+  async function postScoreKV(nickname, score){
+    try{
+      const res = await fetch("/api/leaderboard", {
+        method: "POST",
+        headers: {"content-type":"application/json"},
+        body: JSON.stringify({ nickname, score })
+      });
+      return await res.json();
+    }catch(_){ return {ok:false}; }
+  }
+
+  async function drawTop50OnCanvas(){
+    try{
+      const res = await fetch("/api/leaderboard?limit=50");
+      const data = await res.json();               // { ok:true, results:[{name,score}] }
+      const list = (data && data.results) ? data.results : [];
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 22px Arial";
+      ctx.fillText("Leaderboard (Top 50)", W/2, H/2 + 90);
+
+      ctx.font = "18px Arial";
+      // ekrana taşmaması için ilk ~12 satırı gösteriyoruz
+      list.slice(0,12).forEach((e,i)=>{
+        const name = e.name || e.nickname || "anon";
+        ctx.fillText(`${i+1}. ${name} — ${e.score}`, W/2, H/2 + 120 + i*24);
+      });
+    }catch(_){}
+  }
+  /* =========================================== */
 
   // Assets
   const cowImg = new Image();
@@ -64,7 +98,7 @@
       ctx.globalAlpha = 1;
     },
     hitbox(){
-      return {x:this.x+6, y:groundY-this.height-this.y+4, w:this.width-12, h:this.height-8}; // tighter player box
+      return {x:this.x+6, y:groundY-this.height-this.y+4, w:this.width-12, h:this.height-8};
     }
   };
 
@@ -76,15 +110,15 @@
     obstacles.push({x:W, y:groundY-h, w, h});
   }
 
-  // Simple parallax trees (as in v5)
+  // Simple parallax trees
   const trees=[];
   function spawnTree(){ trees.push({x:W, y:groundY-120, h:100+Math.random()*80}); }
   let treeTimer=0;
 
   // Game state
   let last=0, score=0, gameOver=false;
-  let speed = 6.5;          // start speed
-  const maxSpeed = 14;      // cap like dino does at high pace
+  let speed = 6.5;
+  const maxSpeed = 14;
 
   // Restart
   function restart(){
@@ -94,6 +128,7 @@
     score=0; speed=6.5; last=0; gameOver=false;
     player.y=0; player.vy=0; player.ducking=false;
     hintEl.textContent = "↑ Jump • ↓ Duck • R Restart";
+    window.__submitted = false; // yeni oyunda tekrar submit edebilsin
     requestAnimationFrame(loop);
   }
   window.addEventListener('keydown',e=>{
@@ -117,7 +152,6 @@
   }
 
   function overlap(a,b,pad){
-    // shrink obstacle box slightly to avoid unfair collisions
     const bb = {x:b.x+pad, y:b.y+pad, w:b.w-2*pad, h:b.h-2*pad};
     return !(a.x+a.w<bb.x || a.x>bb.x+bb.w || a.y+a.h<bb.y || a.y>bb.y+bb.h);
   }
@@ -140,14 +174,13 @@
     // ground
     ctx.fillStyle="#228B22"; ctx.fillRect(0,groundY,W,H-groundY);
 
-    // Obstacles spawning, paced by speed like Dino
+    // Obstacles spawning
     obstacleTimer -= dt;
     if(obstacleTimer<=0){
       spawnObstacle();
-      // distance-based spacing to avoid unavoidable combos
-      const minGap = 520 - speed*20;  // pixels of travel
+      const minGap = 520 - speed*20;
       const maxGap = 820 - speed*30;
-      const ms = (Math.random()*(maxGap-minGap)+minGap) / (speed*60); // convert distance to seconds at current speed
+      const ms = (Math.random()*(maxGap-minGap)+minGap) / (speed*60);
       obstacleTimer = ms*1000;
     }
 
@@ -163,18 +196,16 @@
     player.update(dt);
     player.draw(ctx);
 
-    // Collisions with padding for fairness
+    // Collisions
     const hb = player.hitbox();
     for(const o of obstacles){
       if(overlap(hb, o, 6)){ gameOver=true; break; }
     }
 
-    // Score & progressive speed-up (Dino-like: gentle continuous increase)
+    // Score & speed-up
     if(!gameOver){
-      score += dt * 0.06;                         // ~3.6 pts/sec
-      // speed rises slowly with score; harder very gradually
+      score += dt * 0.06; // ~3.6 pts/sec
       const target = Math.min(maxSpeed, 6.5 + Math.floor(score/100)*0.4);
-      // ease towards target
       speed += (target - speed) * 0.02;
       scoreEl.textContent = "Score: " + Math.floor(score);
       hintEl.textContent = "";
@@ -184,6 +215,18 @@
       ctx.fillStyle="#fff"; ctx.textAlign="center";
       ctx.font="bold 32px Arial"; ctx.fillText("Game Over", W/2, H/2 - 10);
       ctx.font="18px Arial"; ctx.fillText("Press R to Restart", W/2, H/2 + 26);
+
+      // === Leaderboard işlemleri ===
+      const finalScore = Math.floor(score);
+      if (!window.__submitted) {
+        window.__submitted = true;
+        let def = localStorage.getItem('name') || "YOU";
+        let name = (prompt("İsmin (max 12):", def) || def).trim().slice(0,12) || "YOU";
+        localStorage.setItem('name', name);
+        postScoreKV(name, finalScore).then(()=> drawTop50OnCanvas());
+      }
+      // Ağ gecikirse de en azından bir çizim yapalım
+      drawTop50OnCanvas();
     }
   }
 
